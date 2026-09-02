@@ -43,8 +43,14 @@ jobs:
           git clone https://github.com/uestc-workshop-os-camp/rCore-Tutorial-Test.git ci-user/user
           git -C ci-user/user checkout --detach a0593662ad55d670ba8c27ce1763347cd0dd552f
           ID=`git rev-parse --abbrev-ref HEAD | grep -oP 'ch\K[0-9]'`
-          cd ci-user && make test CHAPTER=$ID > ../output.txt
-          cat ../output.txt
+          cd ci-user
+          if make test CHAPTER=$ID > ../output.txt 2>&1; then
+            cat ../output.txt
+          else
+            status=$?
+            cat ../output.txt
+            exit "$status"
+          fi
       - name: end
         id: end
         run: |
