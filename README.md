@@ -30,9 +30,9 @@
 
 ```bash
 # setup build&run environment first
-$ git clone https://github.com/LearningOS/rCore-Tutorial-Code.git
-$ cd rCore-Tutorial-Code
-$ git clone https://github.com/LearningOS/rCore-Tutorial-Test.git user
+$ git clone https://github.com/uestc-workshop-os-camp/rCore-Camp-Code-2026.git
+$ cd rCore-Camp-Code-2026
+$ git clone https://github.com/uestc-workshop-os-camp/rCore-Tutorial-Test.git user
 $ git checkout ch$ID
 $ cd os
 # run OS in ch$ID
@@ -64,11 +64,11 @@ Notice: $ID is from [1-9]
 
 ```bash
 # setup build&run environment first
-$ git clone https://github.com/LearningOS/rCore-Tutorial-Code.git
-$ cd rCore-Tutorial-Code
+$ git clone https://github.com/uestc-workshop-os-camp/rCore-Camp-Code-2026.git
+$ cd rCore-Camp-Code-2026
 $ rm -rf ci-user
-$ git clone https://github.com/LearningOS/rCore-Tutorial-Checker.git ci-user
-$ git clone https://github.com/LearningOS/rCore-Tutorial-Test.git ci-user/user
+$ git clone https://github.com/uestc-workshop-os-camp/rCore-Tutorial-Checker.git ci-user
+$ git clone https://github.com/uestc-workshop-os-camp/rCore-Tutorial-Test.git ci-user/user
 $ git checkout ch$ID
 # check&grade OS in ch$ID with more tests
 $ cd ci-user && make test CHAPTER=$ID
