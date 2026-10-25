@@ -57,8 +57,8 @@ run-inner: build
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
-		-bios $(BOOTLOADER) \
-		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+		-bios default \
+		-kernel $(KERNEL_ELF)
 
 debug: build
 	@tmux new-session -d \
