@@ -3,7 +3,7 @@
 use crate::sbi::shutdown;
 use core::panic::PanicInfo;
 
-#[panic_handler]
+#[panic_handler] //告知编译器采用这套实现来取代原本std库中的panic_handler
 /// panic handler
 fn panic(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {

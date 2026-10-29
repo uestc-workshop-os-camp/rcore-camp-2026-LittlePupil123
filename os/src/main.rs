@@ -1,16 +1,16 @@
-//! The main module and entrypoint
+//! 主模块和入口点
 //!
-//! The operating system and app also starts in this module. Kernel code starts
-//! executing from `entry.asm`, after which [`rust_main()`] is called to
-//! initialize various pieces of functionality [`clear_bss()`]. (See its source code for
-//! details.)
+//! 操作系统和应用程序也从这个模块启动。内核代码从 entry.asm 开始执行，
+//! 之后会调用 [rust_main()] 来初始化各项功能 [clear_bss()]。（详情请参阅其源代码。）
 //!
-//! We then call [`println!`] to display `Hello, world!`.
+//! 然后我们调用 [println!] 来显示 Hello, world!。
+
+
 
 #![deny(missing_docs)]
 #![deny(warnings)]
-#![no_std]
-#![no_main]
+#![no_std] //禁止使用std库
+#![no_main] //禁用main函数，来阻止通过std提供的start语义项进行初始化
 #![feature(panic_info_message)]
 
 use core::arch::global_asm;
@@ -18,7 +18,7 @@ use log::*;
 
 #[macro_use]
 mod console;
-mod lang_items;
+mod lang_items; //从lang_items.rs文件加载这个模块。在这里包含了模块下的函数声明和实现
 mod logging;
 mod sbi;
 
