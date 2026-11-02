@@ -1,18 +1,15 @@
-//! The main module and entrypoint
+//! 主模块和入口点
 //!
-//! Various facilities of the kernels are implemented as submodules. The most
-//! important ones are:
+//! 内核的各种功能设施都以子模块的形式实现。最重要的几个是：
 //!
-//! - [`trap`]: Handles all cases of switching from userspace to the kernel
-//! - [`syscall`]: System call handling and implementation
+//! - [trap]：处理所有从用户空间切换到内核的情况
+//! - [syscall]：系统调用的处理与实现
 //!
-//! The operating system also starts in this module. Kernel code starts
-//! executing from `entry.asm`, after which [`rust_main()`] is called to
-//! initialize various pieces of functionality. (See its source code for
-//! details.)
+//! 操作系统也从这个模块启动。内核代码从 entry.asm 开始执行，
+//! 之后会调用 [rust_main()] 来初始化各项功能。（详情请参阅其源代码。）
 //!
-//! We then call [`batch::run_next_app()`] and for the first time go to
-//! userspace.
+//! 然后我们调用 [batch::run_next_app()]，并第一次进入
+//! 用户空间。
 
 #![deny(missing_docs)]
 #![deny(warnings)]
