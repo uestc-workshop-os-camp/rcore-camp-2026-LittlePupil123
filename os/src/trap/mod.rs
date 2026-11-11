@@ -70,7 +70,7 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
                 stval
             );
         }
+    }
     cx 
 }
-
 pub use context::TrapContext;
