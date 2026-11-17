@@ -174,7 +174,7 @@ pub fn print_app_info() {
 
 //-------------------------------------------------------
 /// run next app
-pub fn run_next_app() -> ! { //run next app函数是发散类型返回值，永不返回，本质上就是上一个程序彻底坏掉，我们要完全重置出新的上下文
+pub fn run_next_app() -> ! { //run next app函数是发散类型返回值，永不返回，本质上就是上一个程序彻底坏掉或者我们运行第一个程序，我们要完全重置出新的上下文
     let mut app_manager = APP_MANAGER.exclusive_access();
     let current_app = app_manager.get_current_app();
     unsafe {

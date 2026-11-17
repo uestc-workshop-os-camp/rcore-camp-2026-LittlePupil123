@@ -68,16 +68,16 @@ __alltraps:
 
 
 #---------------------------------------------------------------------------------------------
-# 当trap_handler返回后，就开始进行恢复程序
+# 当trap_handler返回后（恢复）或者调用（初始化）时，开始进行恢复程序
 __restore:
     # case1: start running app by __restore
     # case2: back to U after handling trap
-    mv sp, a0 # 将a0的值复制到sp，也就是让sp重新指向内核栈栈顶
+    mv sp, a0                           # 将a0的值复制到sp，也就是让sp重新指向内核栈栈顶
     # now sp->kernel stack(after allocated), sscratch->user stack
     # restore sstatus/sepc
-    ld t0, 32*8(sp) # 将内核栈中存的t0状态加载到t0中
-    ld t1, 33*8(sp) # 其他的同理，总之通过sp的内核栈依次访问位置依次恢复寄存器状态
-    ld t2, 2*8(sp)
+    ld t0, 32*8(sp)                     # 将内核栈中存的t0状态加载到t0中
+    ld t1, 33*8(sp)                     # 其他的同理，总之通过sp的内核栈依次访问位置依次恢复寄存器状态
+    ld t2, 2*8(sp)                      # 而其中，trapContext::app_init_context()时结构体的对应的t2字段正存着用户栈地址，在初始化时给到sscratch
     csrw sstatus, t0
     csrw sepc, t1
     csrw sscratch, t2
