@@ -66,8 +66,9 @@ impl AppManager {
         }
     }
 
+    
     unsafe fn load_app(&self, app_id: usize) {
-        if app_id >= self.num_app {
+        if app_id >= self.num_app { //判断批处理程序是否结束
             println!("All applications completed!");
             use crate::board::QEMUExit;
             crate::board::QEMU_EXIT_HANDLE.exit_success();

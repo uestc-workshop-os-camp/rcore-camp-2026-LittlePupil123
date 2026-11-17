@@ -26,7 +26,7 @@ impl TrapContext {
             sstatus,
             sepc: entry, // entry point of app
         };
-        cx.set_sp(sp); // app's user stack pointer
+        cx.set_sp(sp); // app's user stack pointer将sp指向用户栈
         cx // return initial Trap Context of app
     }
 }

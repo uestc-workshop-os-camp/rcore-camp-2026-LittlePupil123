@@ -23,6 +23,8 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
+
+//--------------------------------------------------------
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -32,34 +34,40 @@ pub use context::TaskContext;
 /// Most of `TaskManager` are hidden behind the field `inner`, to defer
 /// borrowing checks to runtime. You can see examples on how to use `inner` in
 /// existing functions on `TaskManager`.
+/// 这里采用了将变量和常量分离的编程风格
 pub struct TaskManager {
     /// total number of tasks
-    num_app: usize,
+    num_app: usize, //应用个数，它在 TaskManager 初始化后将保持不变（常量）
     /// use inner value to get mutable access
-    inner: UPSafeCell<TaskManagerInner>,
+    inner: UPSafeCell<TaskManagerInner>,//内部的外层符号（常量）
 }
 
 /// Inner of Task Manager
 pub struct TaskManagerInner {
     /// task list
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: [TaskControlBlock; MAX_APP_NUM],//任务控制块数组 tasks（变量）
     /// id of current `Running` task
-    current_task: usize,
+    current_task: usize,//当前任务编号（变量）
 }
+//--------------------------------------------
 
-lazy_static! {
+
+
+lazy_static! {//声明一个全局TaskManager实例，并做初始化
     /// Global variable: TASK_MANAGER
     pub static ref TASK_MANAGER: TaskManager = {
-        let num_app = get_num_app();
+        let num_app = get_num_app(); //调用loader模块里的这个方法获取应用程序的个数
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
         }; MAX_APP_NUM];
+
+        //给每个任务控制块均进行初始化。
         for (i, task) in tasks.iter_mut().enumerate() {
-            task.task_cx = TaskContext::goto_restore(init_app_cx(i));
-            task.task_status = TaskStatus::Ready;
+            task.task_cx = TaskContext::goto_restore(init_app_cx(i)); //初始化任务上下文
+            task.task_status = TaskStatus::Ready;//运行状态设为Ready
         }
-        TaskManager {
+        TaskManager { //建立TaskManager实例并返回
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {

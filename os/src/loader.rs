@@ -21,10 +21,12 @@ struct UserStack {
     data: [u8; USER_STACK_SIZE],
 }
 
+//与USER_STACK同理，每个程序也有自己对应的内核栈
 static KERNEL_STACK: [KernelStack; MAX_APP_NUM] = [KernelStack {
     data: [0; KERNEL_STACK_SIZE],
 }; MAX_APP_NUM];
 
+//每个应用程序自己的User Stack，存在一个USER_STACK数组里面
 static USER_STACK: [UserStack; MAX_APP_NUM] = [UserStack {
     data: [0; USER_STACK_SIZE],
 }; MAX_APP_NUM];
@@ -49,6 +51,7 @@ impl UserStack {
 }
 
 /// Get base address of app i.
+/// 获取第i个app的起始地址
 fn get_base_i(app_id: usize) -> usize {
     APP_BASE_ADDRESS + app_id * APP_SIZE_LIMIT
 }
@@ -63,6 +66,7 @@ pub fn get_num_app() -> usize {
 
 /// Load nth user app at
 /// [APP_BASE_ADDRESS + n * APP_SIZE_LIMIT, APP_BASE_ADDRESS + (n+1) * APP_SIZE_LIMIT).
+/// 负责将所有用户程序在内核初始化的时一并加载进内存。
 pub fn load_apps() {
     extern "C" {
         fn _num_app();
@@ -72,7 +76,7 @@ pub fn load_apps() {
     let app_start = unsafe { core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1) };
     // load apps
     for i in 0..num_app {
-        let base_i = get_base_i(i);
+        let base_i = get_base_i(i); //将base_i设为第i个应用程序的起始地址，从而将各个程序加载到对应的程序地址上。
         // clear region
         (base_i..base_i + APP_SIZE_LIMIT)
             .for_each(|addr| unsafe { (addr as *mut u8).write_volatile(0) });
@@ -89,12 +93,13 @@ pub fn load_apps() {
     // Therefore, fence.i must be executed after we have loaded
     // the code of the next app into the instruction memory.
     // See also: riscv non-priv spec chapter 3, 'Zifencei' extension.
-    unsafe {
+    unsafe {//清空i-cache
         asm!("fence.i");
     }
 }
 
 /// get app info with entry and sp and save `TrapContext` in kernel stack
+/// 压入对应app的初始user上下文，并初始化其寄存器状态来能够正常使用。
 pub fn init_app_cx(app_id: usize) -> usize {
     KERNEL_STACK[app_id].push_context(TrapContext::app_init_context(
         get_base_i(app_id),

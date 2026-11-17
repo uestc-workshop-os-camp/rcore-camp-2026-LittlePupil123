@@ -21,7 +21,7 @@ pub fn sys_exit(exit_code: i32) -> ! {
 /// current task gives up resources for other tasks
 pub fn sys_yield() -> isize {
     trace!("kernel: sys_yield");
-    suspend_current_and_run_next();
+    suspend_current_and_run_next();//task子模块下的该函数，功能如字面意思
     0
 }
 
