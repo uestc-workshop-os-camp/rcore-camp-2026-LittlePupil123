@@ -13,7 +13,7 @@ const MSEC_PER_SEC: usize = 1000;
 const MICRO_PER_SEC: usize = 1_000_000;
 
 /// Get the current time in ticks
-pub fn get_time() -> usize {
+pub fn get_time() -> usize { //基于此编写的 get_time 函数可以取得当前 mtime 计数器的值；
     time::read()
 }
 
@@ -24,6 +24,7 @@ pub fn get_time_ms() -> usize {
 }
 
 /// get current time in microseconds
+/// get_time_us 可以以微秒为单位返回当前计数器的值。
 #[allow(dead_code)]
 pub fn get_time_us() -> usize {
     time::read() * MICRO_PER_SEC / CLOCK_FREQ

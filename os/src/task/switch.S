@@ -8,7 +8,7 @@
     .section .text
     .globl __switch
 __switch:
-    # 规定__switch函数传入的两个参数，并依次将参数存入a0，a1
+    # 规定__switch函数传入的两个参数（当前TaskContext头地址和下一个TaskContext头地址），并依次将参数存入a0，a1
     # 所以a0存当前任务上下文，a1存下一个任务的上下文
     # __switch(
     #     current_task_cx_ptr: *mut TaskContext,
@@ -16,7 +16,7 @@ __switch:
     # )
 
     #以a0的地址作为基准，将每个寄存器状态
-    #存入我们rust程序中声明的结构体TaskContext的对应字段里。
+    #存入我们rust程序中声明的结构体TaskContext实例的对应字段里。
     # save kernel stack of current task
     sd sp, 8(a0) 
     # save ra & s0~s11 of current execution

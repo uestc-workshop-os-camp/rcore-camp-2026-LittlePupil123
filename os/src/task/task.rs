@@ -9,6 +9,9 @@ pub struct TaskControlBlock { //任务控制块，包含任务状态和任务上
     pub task_status: TaskStatus,
     /// The task context
     pub task_cx: TaskContext,
+    /// 系统调用计数数组
+    pub syscall_times:[u32;500],
+
 }
 
 /// The status of a task

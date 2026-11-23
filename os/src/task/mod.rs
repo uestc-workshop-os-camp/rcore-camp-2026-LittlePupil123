@@ -17,6 +17,7 @@ mod task;
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
+use core::cell::RefMut;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
@@ -45,9 +46,9 @@ pub struct TaskManager {
 /// Inner of Task Manager
 pub struct TaskManagerInner {
     /// task list
-    tasks: [TaskControlBlock; MAX_APP_NUM],//任务控制块数组 tasks（变量）
+    pub tasks: [TaskControlBlock; MAX_APP_NUM],//任务控制块数组 tasks（变量）
     /// id of current `Running` task
-    current_task: usize,//当前任务编号（变量）
+    pub current_task: usize,//当前任务编号（变量）
 }
 //--------------------------------------------
 
@@ -60,12 +61,14 @@ lazy_static! {//声明一个全局TaskManager实例，并做初始化
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_times:[0;500],
         }; MAX_APP_NUM];
 
         //给每个任务控制块均进行初始化。
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i)); //初始化任务上下文
             task.task_status = TaskStatus::Ready;//运行状态设为Ready
+            
         }
         TaskManager { //建立TaskManager实例并返回
             num_app,
@@ -142,6 +145,11 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    ///获取TaskManagerInner的可变引用
+    pub fn get_inner(&self) -> RefMut<'_, TaskManagerInner>{
+        self.inner.exclusive_access()
     }
 }
 
