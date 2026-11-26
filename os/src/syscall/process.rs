@@ -4,6 +4,9 @@ use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current
 use crate::mm::translated_byte_buffer;
 use crate::task::current_user_token; // 获取当前任务的页表 Token
 use crate::timer::get_time;
+use crate::task::TASK_MANAGER;
+use crate::mm::{memory_set,address};
+use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -36,7 +39,7 @@ pub fn sys_yield() -> isize {
 /// 通过使用`translated_byte_buffer`函数，
 /// 我们可以将用户态的虚拟地址转换为内核态可访问的字节切片，
 /// 从而实现对用户空间数据的安全访问和操作。
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
 
     let token = current_user_token();
@@ -67,15 +70,88 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
+pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    -1
+    let token = current_user_token();
+    match trace_request{
+        0 => {
+            let buffers = translated_byte_buffer(token, id as *mut u8, 1);
+            if buffers.is_empty() {
+                return -1;
+            }
+            buffers[0][0] as isize
+        },
+        1 => {
+            let mut buffers = translated_byte_buffer(token, id as *mut u8, 1);
+            if buffers.is_empty() {
+                return -1;
+            }
+            buffers[0][0] = data as u8;
+            0
+        },
+        2 => {
+            let times={
+                let task_inner = TASK_MANAGER.get_inner();
+                let current = task_inner.current_task;
+                if id<500{
+                    task_inner.tasks[current].syscall_times[id]
+                }else{ 0 }
+            };
+            times as isize
+        },
+        _=> {
+            -1
+        },
+    }
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+
+    //特判start是否按页对齐以及其他特判错误
+    if start % PAGE_SIZE != 0 || prot & !0x7 == 0 || prot & 0x7 != 0{
+        return -1;
+    }
+    
+    if len == 0 { return 0; } //长度为0直接返回0，表示成功但不分配内存
+
+    let start_vpn = VirtAddr::from(start); //将起始虚拟地址转换为VirtAddr类型
+    let end_vpn = VirtAddr::from(VirtAddr::from(start + len).ceil());//计算结束虚拟页号边界的虚拟地址
+
+    
+    //获取当前任务的地址空间
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    let memory_set = &mut inner.tasks[current].memory_set;
+
+    // 判断区间是否重叠
+    for area in memory_set.areas.iter() {
+        let area_start = area.vpn_range.get_start().0;
+        let area_end = area.vpn_range.get_end().0;
+        
+        // 核心重叠判断逻辑：
+        // 请求的 start < 已有段的 end，并且 已有段的 start < 请求的 end
+        if start_vpn < area_end && area_start < end_vpn {
+            return -1; // 发生地址冲突，重叠了！
+        }
+    }
+    
+    // 将prot转换为MapPermission
+    let mut map_perm = MapPermission::U;
+    if prot & 1 != 0 { map_perm |= MapPermission::R; }
+    if prot & 2 != 0 { map_perm |= MapPermission::W; }
+    if prot & 4 != 0 { map_perm |= MapPermission::X; }
+
+    memory_set.insert_framed_area(
+        start,
+        end,
+        map_perm,
+    );
+
+
+    return 0;
+
 }
 
 // YOUR JOB: Implement munmap.
