@@ -5,8 +5,9 @@ use crate::mm::translated_byte_buffer;
 use crate::task::current_user_token; // 获取当前任务的页表 Token
 use crate::timer::get_time;
 use crate::task::TASK_MANAGER;
-use crate::mm::{memory_set,address};
-use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
+use crate::mm::MapPermission;
+use crate::config::PAGE_SIZE;
+use crate::mm::address::VirtAddr;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -110,18 +111,18 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
 
     //特判start是否按页对齐以及其他特判错误
-    if start % PAGE_SIZE != 0 || prot & !0x7 == 0 || prot & 0x7 != 0{
+    if start % PAGE_SIZE != 0 || port & !0x7 == 0 || port & 0x7 != 0{
         return -1;
     }
     
     if len == 0 { return 0; } //长度为0直接返回0，表示成功但不分配内存
 
-    let start_vpn = VirtAddr::from(start); //将起始虚拟地址转换为VirtAddr类型
-    let end_vpn = VirtAddr::from(VirtAddr::from(start + len).ceil());//计算结束虚拟页号边界的虚拟地址
+    let start_vpn = start.into(); //将起始虚拟地址转换为VirtAddr类型
+    let end_vpn =(start + len + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;//计算结束虚拟页号边界的虚拟地址
 
     
     //获取当前任务的地址空间
-    let inner = TASK_MANAGER.inner.exclusive_access();
+    let inner = TASK_MANAGER.get_inner();
     let current = inner.current_task;
     let memory_set = &mut inner.tasks[current].memory_set;
 
@@ -137,15 +138,15 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
         }
     }
     
-    // 将prot转换为MapPermission
+    // 将port转换为MapPermission
     let mut map_perm = MapPermission::U;
-    if prot & 1 != 0 { map_perm |= MapPermission::R; }
-    if prot & 2 != 0 { map_perm |= MapPermission::W; }
-    if prot & 4 != 0 { map_perm |= MapPermission::X; }
+    if port & 1 != 0 { map_perm |= MapPermission::R; }
+    if port & 2 != 0 { map_perm |= MapPermission::W; }
+    if port & 4 != 0 { map_perm |= MapPermission::X; }
 
     memory_set.insert_framed_area(
-        start,
-        end,
+        VirtAddr(start_vpn),
+        VirtAddr(end_vpn),
         map_perm,
     );
 

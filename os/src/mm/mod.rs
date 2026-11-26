@@ -6,7 +6,8 @@
 //!
 //! Every task or process has a memory_set to control its virtual memory.
 
-mod address;
+/// 公开addressmod方便sycall模块进行类型转换
+pub mod address;
 mod frame_allocator;
 mod heap_allocator;
 mod memory_set;
