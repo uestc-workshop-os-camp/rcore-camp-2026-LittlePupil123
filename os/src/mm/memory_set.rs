@@ -38,7 +38,8 @@ lazy_static! {
 /// address space
 pub struct MemorySet {
     page_table: PageTable,
-    areas: Vec<MapArea>,
+    /// 暴露areas给syscall——mmap用
+    pub areas: Vec<MapArea>,
 }
 
 

@@ -28,6 +28,9 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+    /// 系统调用计数数组
+    pub syscall_times:[u32;500],
 }
 
 impl TaskControlBlock {
