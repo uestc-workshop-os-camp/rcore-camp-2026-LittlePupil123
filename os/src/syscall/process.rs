@@ -1,13 +1,10 @@
 //! Process management syscalls
 use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
 
-use crate::mm::translated_byte_buffer;
-use crate::task::current_user_token; // 获取当前任务的页表 Token
-use crate::timer::get_time;
-use crate::task::TASK_MANAGER;
-use crate::mm::MapPermission;
 use crate::config::PAGE_SIZE;
-use crate::mm::address::VirtAddr;
+use crate::mm::{translated_byte_buffer, MapPermission, VirtAddr};
+use crate::task::{current_user_token, TASK_MANAGER};
+use crate::timer::get_time;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -90,16 +87,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             buffers[0][0] = data as u8;
             0
         },
-        2 => {
-            let times={
-                let task_inner = TASK_MANAGER.get_inner();
-                let current = task_inner.current_task;
-                if id<500{
-                    task_inner.tasks[current].syscall_times[id]
-                }else{ 0 }
-            };
-            times as isize
-        },
+        2 => TASK_MANAGER.syscall_times(id) as isize,
         _=> {
             -1
         },
@@ -107,59 +95,93 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+//
+// 简化版 mmap：只负责分配内存，不做文件映射。
+// - `start` 必须按页对齐，否则返回 -1；
+// - `len` 不要求对齐，会向上取整到页边界；len 为 0 视为空操作，直接返回 0；
+// - `prot` 的低三位依次表示读(R)、写(W)、执行(X)权限，且不能为 0；
+// - 成功返回 0，失败返回 -1。
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
+    trace!("kernel: sys_mmap");
 
-    //特判start是否按页对齐以及其他特判错误
-    if start % PAGE_SIZE != 0 || port & !0x7 == 0 || port & 0x7 != 0{
+    // start 必须对齐到页边界；prot 只能使用低 3 位且不能为 0
+    if start % PAGE_SIZE != 0 || prot == 0 || prot & !0x7 != 0 {
         return -1;
     }
-    
-    if len == 0 { return 0; } //长度为0直接返回0，表示成功但不分配内存
-
-    let start_vpn = start.into(); //将起始虚拟地址转换为VirtAddr类型
-    let end_vpn =(start + len + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE;//计算结束虚拟页号边界的虚拟地址
-
-    
-    //获取当前任务的地址空间
-    let inner = TASK_MANAGER.get_inner();
-    let current = inner.current_task;
-    let memory_set = &mut inner.tasks[current].memory_set;
-
-    // 判断区间是否重叠
-    for area in memory_set.areas.iter() {
-        let area_start = area.vpn_range.get_start().0;
-        let area_end = area.vpn_range.get_end().0;
-        
-        // 核心重叠判断逻辑：
-        // 请求的 start < 已有段的 end，并且 已有段的 start < 请求的 end
-        if start_vpn < area_end && area_start < end_vpn {
-            return -1; // 发生地址冲突，重叠了！
-        }
+    // 长度为 0 不分配任何内存，直接返回成功
+    if len == 0 {
+        return 0;
     }
-    
-    // 将port转换为MapPermission
+
+    // 结束地址向上取整到页边界：即使 len 不是页的整数倍，也要覆盖到最后一页
+    let end = match start.checked_add(len) {
+        Some(v) => (v + PAGE_SIZE - 1) & !(PAGE_SIZE - 1),
+        None => return -1,
+    };
+    if end <= start {
+        return -1;
+    }
+
+    // prot 的低三位依次表示读、写、执行权限，另外始终带上 U（用户态可访问）
     let mut map_perm = MapPermission::U;
-    if port & 1 != 0 { map_perm |= MapPermission::R; }
-    if port & 2 != 0 { map_perm |= MapPermission::W; }
-    if port & 4 != 0 { map_perm |= MapPermission::X; }
+    if prot & 0x1 != 0 {
+        map_perm |= MapPermission::R;
+    }
+    if prot & 0x2 != 0 {
+        map_perm |= MapPermission::W;
+    }
+    if prot & 0x4 != 0 {
+        map_perm |= MapPermission::X;
+    }
 
-    memory_set.insert_framed_area(
-        VirtAddr(start_vpn),
-        VirtAddr(end_vpn),
-        map_perm,
-    );
-
-
-    return 0;
-
+    // 通过 TaskManager 的方法拿到当前任务的地址空间，不直接接触 TaskManagerInner
+    TASK_MANAGER.with_current_memory_set(|memory_set| {
+        let start_va: VirtAddr = start.into();
+        let end_va: VirtAddr = end.into();
+        // 与已有逻辑段重叠则拒绝，避免覆盖已有的映射
+        if !memory_set.is_range_free(start_va, end_va) {
+            return -1;
+        }
+        memory_set.insert_framed_area(start_va, end_va, map_perm);
+        // 无需调用 activate()：陷入内核时 satp 已切到内核页表，返回用户态时
+        // __restore 会写回用户 satp 并执行 sfence.vma，新映射自然生效。
+        0
+    })
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+//
+// 简化版 munmap：解除 [start, start + len) 内的页映射并释放物理页帧。
+// start 和 len 都必须按页对齐，否则返回 -1；
+// 区间内存在未映射的页（即区间不连续）也返回 -1；
+// len 为 0 视为空操作，直接返回 0。
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+
+    if start % PAGE_SIZE != 0 || len % PAGE_SIZE != 0 {//判断是否按页对齐start
+        return -1;
+    }
+    if len == 0 {
+        return 0;
+    }
+    let end = match start.checked_add(len) { //checked_add防越界
+        Some(end) => end,
+        None => return -1,
+    };
+
+    // 對當前地址空间做操作。
+    TASK_MANAGER.with_current_memory_set(|memory_set| {
+        let start_va: VirtAddr = start.into();
+        let end_va: VirtAddr = end.into();
+        // 逐页解除映射，并同步裁剪/拆分对应的逻辑段
+        if memory_set.unmap_range(start_va, end_va) {
+            0
+        } else {
+            -1
+        }
+    })
 }
+
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
     trace!("kernel: sys_sbrk");

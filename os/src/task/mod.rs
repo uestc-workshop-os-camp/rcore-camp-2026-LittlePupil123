@@ -15,14 +15,17 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MemorySet;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-use core::cell::RefMut;
 pub use context::TaskContext;
+
+/// Maximum number of syscall ids whose call count is recorded per task.
+pub const MAX_SYSCALL_NUM: usize = 500;
 
 /// The task manager, where all the tasks are managed.
 ///
@@ -37,15 +40,18 @@ pub struct TaskManager {
     /// total number of tasks
     num_app: usize,
     /// use inner value to get mutable access
-    pub inner: UPSafeCell<TaskManagerInner>,
+    inner: UPSafeCell<TaskManagerInner>,
 }
 
 /// The task manager inner in 'UPSafeCell'
+///
+/// It stays private to this module: other modules can only observe or modify
+/// it through the methods of [`TaskManager`].
 struct TaskManagerInner {
     /// task list
-    pub tasks: Vec<TaskControlBlock>,
+    tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
-    pub current_task: usize,
+    current_task: usize,
 }
 
 lazy_static! {
@@ -153,9 +159,38 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
-     ///获取TaskManagerInner的可变引用
-    pub fn get_inner(&self) -> RefMut<'_, TaskManagerInner>{
-        self.inner.exclusive_access()
+    /// Record one more call of `syscall_id` by the current 'Running' task.
+    ///
+    /// Ids outside `0..MAX_SYSCALL_NUM` are ignored.
+    pub fn inc_syscall_times(&self, syscall_id: usize) {
+        if syscall_id >= MAX_SYSCALL_NUM {
+            return;
+        }
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].syscall_times[syscall_id] += 1;
+    }
+
+    /// Get how many times the current 'Running' task has called `syscall_id`.
+    ///
+    /// Returns 0 for ids that are not counted.
+    pub fn syscall_times(&self, syscall_id: usize) -> usize {
+        if syscall_id >= MAX_SYSCALL_NUM {
+            return 0;
+        }
+        let inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].syscall_times[syscall_id] as usize
+    }
+
+    /// Run `f` with mutable access to the current 'Running' task's address space.
+    ///
+    /// The lock is held only for the duration of `f`, so `f` must not call any
+    /// other method of [`TaskManager`], or the `UPSafeCell` will panic.
+    pub fn with_current_memory_set<R>(&self, f: impl FnOnce(&mut MemorySet) -> R) -> R {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        f(&mut inner.tasks[cur].memory_set)
     }
 }
 

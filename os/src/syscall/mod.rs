@@ -34,12 +34,8 @@ use crate::task::TASK_MANAGER;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
-    let mut task_inner = TASK_MANAGER.get_inner();
-    let current = task_inner.current_task;
-    if syscall_id<500 {
-        task_inner.tasks[current].syscall_times[syscall_id]+=1;
-    }
-    drop(task_inner);
+    // Count the call before dispatching, so that `exit` is counted as well.
+    TASK_MANAGER.inc_syscall_times(syscall_id);
 
 
     match syscall_id {

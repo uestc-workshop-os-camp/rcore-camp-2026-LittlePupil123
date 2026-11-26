@@ -234,13 +234,16 @@ impl<T> SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
+    /// Create a new `SimpleRange` covering `[start, end)`.
     pub fn new(start: T, end: T) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
         Self { l: start, r: end }
     }
+    /// Get the start of this range.
     pub fn get_start(&self) -> T {
         self.l
     }
+    /// Get the end of this range.
     pub fn get_end(&self) -> T {
         self.r
     }
@@ -267,6 +270,7 @@ impl<T> SimpleRangeIterator<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
+    /// Create a new iterator over `[l, r)`.
     pub fn new(l: T, r: T) -> Self {
         Self { current: l, end: r }
     }

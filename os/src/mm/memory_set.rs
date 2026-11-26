@@ -38,8 +38,7 @@ lazy_static! {
 /// address space
 pub struct MemorySet {
     page_table: PageTable,
-    /// 暴露areas给syscall——mmap用
-    pub areas: Vec<MapArea>,
+    areas: Vec<MapArea>,
 }
 
 
@@ -68,6 +67,103 @@ impl MemorySet {
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+    }
+    /// Check whether `[start_va, end_va)` overlaps none of the existing areas.
+    ///
+    /// Used by `mmap` to refuse a mapping that would clobber an existing one.
+    pub fn is_range_free(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let start = start_va.floor();
+        let end = end_va.ceil();
+        self.areas
+            .iter()
+            .all(|area| area.vpn_range.get_end() <= start || end <= area.vpn_range.get_start())
+    }
+    /// Unmap every page of `[start_va, end_va)`.
+    ///
+    /// Returns `false` and changes nothing if some page of the range is not
+    /// mapped or not covered by any area. Otherwise the pages are unmapped and
+    /// the areas covering them are trimmed, or split into two when the range
+    /// falls strictly inside an area.
+    pub fn unmap_range(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if start_vpn >= end_vpn {
+            return false;
+        }
+        // 先确认区间内每一页都建立了映射，并且都落在某个逻辑段上
+        let mut vpn = start_vpn;
+        while vpn < end_vpn {
+            let in_area = self
+                .areas
+                .iter()
+                .any(|area| area.vpn_range.get_start() <= vpn && vpn < area.vpn_range.get_end());
+            if !in_area || self.page_table.translate(vpn).is_none() {
+                return false;
+            }
+            vpn.step();//到下一个虚拟页号
+        }
+        let MemorySet { areas, page_table } = self;
+        let mut vpn = start_vpn;
+        while vpn < end_vpn {
+            // 找到包含当前页的逻辑段
+            let idx = match areas.iter().position(|area| {
+                area.vpn_range.get_start() <= vpn && vpn < area.vpn_range.get_end()
+            }) {
+                Some(idx) => idx,
+                None => {
+                    vpn.step();
+                    continue;
+                }
+            };
+            let area_start = areas[idx].vpn_range.get_start();
+            let area_end = areas[idx].vpn_range.get_end();
+            // 确定在找到的逻辑段内能解除映射的区间
+            let unmap_start = area_start.max(start_vpn);
+            let unmap_end = area_end.min(end_vpn);
+
+            // 逐页解除映射：释放物理页帧并清空页表项
+            let mut page = unmap_start;
+            while page < unmap_end {
+                if page_table.translate(page).is_some() {
+                    areas[idx].unmap_one(page_table, page);
+                }
+                page.step();
+            }
+
+            // 根据交集在逻辑段中的位置修改它的 vpn_range
+            if unmap_start == area_start && unmap_end == area_end {
+                // 整个逻辑段都被解除，直接删掉
+                areas.remove(idx);
+            } else if unmap_start == area_start {
+                // 只解除头部，段起点右移
+                areas[idx].vpn_range = VPNRange::new(unmap_end, area_end);
+            } else if unmap_end == area_end {
+                // 只解除尾部，段终点左移
+                areas[idx].vpn_range = VPNRange::new(area_start, unmap_start);
+            } else {
+                // 落在逻辑段中间：拆成两段
+                
+                let right_frames = areas[idx].data_frames.split_off(&unmap_end);//提出右边的段落
+
+                //对剩下的左边逻辑段修改边界，保存其他属性，方便后续新建右段落
+                let map_type = areas[idx].map_type;
+                let map_perm = areas[idx].map_perm;
+                areas[idx].vpn_range = VPNRange::new(area_start, unmap_start);
+
+                //插入新生成的右边逻辑段进入areas数组管理，除了VPNRange之外的属性和左边段落一致
+                areas.insert(
+                    idx + 1,
+                    MapArea {
+                        vpn_range: VPNRange::new(unmap_end, area_end),
+                        data_frames: right_frames,
+                        map_type,
+                        map_perm,
+                    },
+                );
+            }
+            vpn = unmap_end;//vpn右移，缩小未修改的vpn区间
+        }
+        true
     }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
@@ -320,8 +416,7 @@ impl MapArea {
         //只有成功插入进页表，对应的地址空间下的逻辑段才有了对应的实际物理页帧能够操作
     }
 
-    /// 接触逻辑段的其中一页的映射关系。
-    #[allow(unused)]
+    /// 解除逻辑段中某一页的映射关系。
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {//data_frames只在Framed类型时才不为空
             self.data_frames.remove(&vpn);//释放对应的物理页帧
