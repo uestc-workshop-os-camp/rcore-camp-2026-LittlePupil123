@@ -15,6 +15,8 @@ use core::arch::asm;
 use lazy_static::*;
 use riscv::register::satp;
 
+
+//引入内核中各个段落的符号
 extern "C" {
     fn stext();
     fn etext();
@@ -39,8 +41,11 @@ pub struct MemorySet {
     areas: Vec<MapArea>,
 }
 
+
+//----------------------------------------------------------
 impl MemorySet {
     /// Create a new empty `MemorySet`.
+    /// 新建一个空的地址空间
     pub fn new_bare() -> Self {
         Self {
             page_table: PageTable::new(),
@@ -79,6 +84,7 @@ impl MemorySet {
         );
     }
     /// Without kernel stacks.
+    /// 创建内核地址空间
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
@@ -263,6 +269,9 @@ impl MemorySet {
         }
     }
 }
+///----------------------------------------------------------
+
+//MapArea相关声明和实现
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
     vpn_range: VPNRange,
@@ -271,7 +280,9 @@ pub struct MapArea {
     map_perm: MapPermission,
 }
 
+//----------------------------------------------------------
 impl MapArea {
+    ///通过传入签名新建一个逻辑段
     pub fn new(
         start_va: VirtAddr,
         end_va: VirtAddr,
@@ -287,27 +298,34 @@ impl MapArea {
             map_perm,
         }
     }
+
+    /// 在虚拟页号 vpn 已经确定的情况下，
+    /// 它需要知道要将一个怎么样的页表项插入多级页表。
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
-        match self.map_type {
-            MapType::Identical => {
+        match self.map_type {//根据不同的映射类型来为该页表项分配物理页帧
+            MapType::Identical => {//恒等映射类型，直接将vpn转换为对应相等的ppn
                 ppn = PhysPageNum(vpn.0);
             }
-            MapType::Framed => {
+            MapType::Framed => {//Framed映射类型，为当前页表项分配一个页帧
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
-                self.data_frames.insert(vpn, frame);
+                self.data_frames.insert(vpn, frame);//对应物理页帧插入至data_frames中，方便统一管理数据段的页帧
             }
         }
+        //而标志位则统一通过逻辑段给的map_perm来设置转换。
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
-        page_table.map(vpn, ppn, pte_flags);
+        page_table.map(vpn, ppn, pte_flags);//然后拼接并形成一个完整的页表项插入进页表中
+        //只有成功插入进页表，对应的地址空间下的逻辑段才有了对应的实际物理页帧能够操作
     }
+
+    /// 接触逻辑段的其中一页的映射关系。
     #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        if self.map_type == MapType::Framed {
-            self.data_frames.remove(&vpn);
+        if self.map_type == MapType::Framed {//data_frames只在Framed类型时才不为空
+            self.data_frames.remove(&vpn);//释放对应的物理页帧
         }
-        page_table.unmap(vpn);
+        page_table.unmap(vpn);//页表中删除对应的页表项
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
@@ -336,13 +354,17 @@ impl MapArea {
     }
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
+    /// 将data拷贝到逻辑段对应的一系列物理页帧中
+    /// 切片 data 中的数据大小不超过当前逻辑段的总大小，
+    /// 且切片中的数据会被对齐到逻辑段的开头，然后逐页拷贝到实际的物理页帧。
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
         let len = data.len();
-        loop {
-            let src = &data[start..len.min(start + PAGE_SIZE)];
+        loop {//loop内进行逐页拷贝，遍历每一个需要拷贝数据的虚拟页面
+            //确定复制源src和目的dst以及每页能复制的原data的长度
+            let src = &data[start..len.min(start + PAGE_SIZE)];//取长度和最大页长间的最小值
             let dst = &mut page_table
                 .translate(current_vpn)
                 .unwrap()
@@ -350,13 +372,15 @@ impl MapArea {
                 .get_bytes_array()[..src.len()];
             dst.copy_from_slice(src);
             start += PAGE_SIZE;
-            if start >= len {
+            if start >= len { //进入下一页前判断自己是否已经复制完成
                 break;
             }
             current_vpn.step();
         }
     }
 }
+//----------------------------------------------------------
+
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed

@@ -16,6 +16,11 @@ pub struct FrameTracker {
 
 impl FrameTracker {
     /// Create a new FrameTracker
+    ///  // page cleaning
+        //get_bytes_array()通过页号查找到对应物理地址，
+        //然后将该页转成u8数组切片
+        //从而能够通过操作该数组切片
+        //在rust中操作这块内存（在这里是清零这块内存）
     pub fn new(ppn: PhysPageNum) -> Self {
         // page cleaning
         let bytes_array = ppn.get_bytes_array();
@@ -38,12 +43,17 @@ impl Drop for FrameTracker {
     }
 }
 
+
+//定义物理页帧管理器的特征
 trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
     fn dealloc(&mut self, ppn: PhysPageNum);
 }
 /// an implementation for frame allocator
+/// 实现一种简单的栈式物理页帧管理策略
+/// 该管理器说明：页号区间[current,end)此前均未被分配出去过，
+/// 而recycled以栈的形式存储被回收的物理页号
 pub struct StackFrameAllocator {
     current: usize,
     end: usize,
@@ -51,6 +61,8 @@ pub struct StackFrameAllocator {
 }
 
 impl StackFrameAllocator {
+    /// 而在管理器要被真正被使用起来之前，需要调用 init 方法将自身的 
+    /// 初始化为可用物理页号区间：
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
@@ -58,6 +70,7 @@ impl StackFrameAllocator {
     }
 }
 impl FrameAllocator for StackFrameAllocator {
+    ///初始化一个栈式物理页帧管理器，将current和end设为0，并新建一个recycled栈
     fn new() -> Self {
         Self {
             current: 0,
@@ -65,6 +78,10 @@ impl FrameAllocator for StackFrameAllocator {
             recycled: Vec::new(),
         }
     }
+
+    //--------------------实现管理器核心功能---------------------
+    /// 分配时优先看vec有没有分配过收回的内存，有的话直接调用；
+    /// 没有的话采用current指向的页号来分配，然后current自加。
     fn alloc(&mut self) -> Option<PhysPageNum> {
         if let Some(ppn) = self.recycled.pop() {
             Some(ppn.into())
@@ -75,19 +92,27 @@ impl FrameAllocator for StackFrameAllocator {
             Some((self.current - 1).into())
         }
     }
+
+    ///回收时检查该页号是否合法，合法则加入recycled栈中
+    /// 有两个条件判定是该页号是否合法：
+    /// 1.页号被用过，则必定小于current；
+    /// 2.在recycled栈中必定不存在这个页号，
+    /// 如果不符合以上两个条件就说明管理器出错，直接崩溃
     fn dealloc(&mut self, ppn: PhysPageNum) {
         let ppn = ppn.0;
         // validity check
         if ppn >= self.current || self.recycled.iter().any(|&v| v == ppn) {
             panic!("Frame ppn={:#x} has not been allocated!", ppn);
         }
-        // recycle
+        // recycle，通过检查则进行回收
         self.recycled.push(ppn);
     }
+    //------------------------------------------
 }
 
 type FrameAllocatorImpl = StackFrameAllocator;
 
+//全局实例化物理页帧管理器
 lazy_static! {
     /// frame allocator instance through lazy_static!
     pub static ref FRAME_ALLOCATOR: UPSafeCell<FrameAllocatorImpl> =

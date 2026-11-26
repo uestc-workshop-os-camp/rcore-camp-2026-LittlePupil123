@@ -44,7 +44,10 @@ impl Debug for PhysPageNum {
     }
 }
 
+
+//------------------------------------------------------
 /// T: {PhysAddr, VirtAddr, PhysPageNum, VirtPageNum}
+/// 实现usize和页号、页地址之间的互换
 /// T -> usize: T.0
 /// usize -> T: usize.into()
 
@@ -92,29 +95,38 @@ impl From<VirtPageNum> for usize {
         v.0
     }
 }
+//------------------------------------------------------
+
 /// virtual address impl
 impl VirtAddr {
     /// Get the (floor) virtual page number
+    /// 获取虚拟地址对应的虚拟页号（向下取整）
     pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
 
     /// Get the (ceil) virtual page number
+    /// 获取虚拟地址对应的虚拟页号（向上取整）
     pub fn ceil(&self) -> VirtPageNum {
         VirtPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
     }
 
     /// Get the page offset of virtual address
+    /// 获取虚拟地址对应的页内偏移
     pub fn page_offset(&self) -> usize {
         self.0 & (PAGE_SIZE - 1)
     }
 
     /// Check if the virtual address is aligned by page size
+    /// 检查虚拟地址是否按页大小对齐
     pub fn aligned(&self) -> bool {
         self.page_offset() == 0
     }
 }
+
+/// 虚拟地址和虚拟页号之间的互换
 impl From<VirtAddr> for VirtPageNum {
+    
     fn from(v: VirtAddr) -> Self {
         assert_eq!(v.page_offset(), 0);
         v.floor()
@@ -125,6 +137,9 @@ impl From<VirtPageNum> for VirtAddr {
         Self(v.0 << PAGE_SIZE_BITS)
     }
 }
+
+//------------------------------------------------------
+/// 为物理地址绑定对应的方法
 impl PhysAddr {
     /// Get the (floor) physical page number
     pub fn floor(&self) -> PhysPageNum {
@@ -157,12 +172,14 @@ impl From<PhysPageNum> for PhysAddr {
 
 impl VirtPageNum {
     /// Get the indexes of the page table entry
+    /// 获得虚拟页号在页表中的三个索引
     pub fn indexes(&self) -> [usize; 3] {
-        let mut vpn = self.0;
-        let mut idx = [0usize; 3];
-        for i in (0..3).rev() {
-            idx[i] = vpn & 511;
-            vpn >>= 9;
+        let mut vpn = self.0;       //获取虚拟页号
+        let mut idx = [0usize; 3];  //创建结果数组存转换得到的三级索引
+
+        for i in (0..3).rev() {     //逆序数列从而使得idx存储页表索引是按照从高到低的顺序
+            idx[i] = vpn & 511;     //取低9位作为其中一级索引
+            vpn >>= 9;              //清掉低9位，准备继续取更高级的索引
         }
         idx
     }
