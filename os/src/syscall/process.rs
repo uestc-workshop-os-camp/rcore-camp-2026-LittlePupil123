@@ -2,7 +2,7 @@
 use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
 
 use crate::config::PAGE_SIZE;
-use crate::mm::{translated_byte_buffer, MapPermission, VirtAddr};
+use crate::mm::{translated_byte_buffer, MapPermission, PTEFlags, PageTable, VirtAddr};
 use crate::task::{current_user_token, TASK_MANAGER};
 use crate::timer::get_time;
 
@@ -66,31 +66,59 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 
 }
 
-/// TODO: Finish sys_trace to pass testcases
-/// HINT: You might reimplement it with virtual memory management.
+/// 检查用户地址是否合法、所在页已映射，且具备读（或写）权限。
+///
+/// 用户地址必须是 39 位规范地址且页表项带 U 位，这样 `isize::MAX`
+/// 这类高位乱码的指针在截断后就不会“撞上” trampoline 的映射。
+fn user_page_allowed(token: usize, addr: usize, write: bool) -> bool {
+    let va = VirtAddr::from(addr);
+    if usize::from(va) != addr {
+        return false;
+    }
+    let page_table = PageTable::from_token(token);
+    match page_table.translate(va.floor()) {
+        Some(pte) => {
+            let flags = pte.flags();
+            let perm_ok = if write { pte.writable() } else { pte.readable() };
+            pte.is_valid() && (flags & PTEFlags::U) != PTEFlags::empty() && perm_ok
+        }
+        None => false,
+    }
+}
+
+/// Read or write one byte of user memory, or query the syscall count.
+///
+/// 先查页表做特判，确认地址已映射且权限匹配后再访问，
+/// 避免 `translated_byte_buffer` 对未映射地址 `unwrap` panic。
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
     let token = current_user_token();
-    match trace_request{
+    match trace_request {
         0 => {
+            // 未映射或不可读：返回 -1，用户库会把它转换成 None
+            if !user_page_allowed(token, id, false) {
+                return -1;
+            }
             let buffers = translated_byte_buffer(token, id as *mut u8, 1);
             if buffers.is_empty() {
                 return -1;
             }
             buffers[0][0] as isize
-        },
+        }
         1 => {
+            // 写操作还要求该页可写，只读页返回 -1
+            if !user_page_allowed(token, id, true) {
+                return -1;
+            }
             let mut buffers = translated_byte_buffer(token, id as *mut u8, 1);
             if buffers.is_empty() {
                 return -1;
             }
             buffers[0][0] = data as u8;
             0
-        },
+        }
         2 => TASK_MANAGER.syscall_times(id) as isize,
-        _=> {
-            -1
-        },
+        _ => -1,
     }
 }
 
