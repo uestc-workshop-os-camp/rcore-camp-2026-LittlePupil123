@@ -96,11 +96,10 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 
 // YOUR JOB: Implement mmap.
 //
-// 简化版 mmap：只负责分配内存，不做文件映射。
-// - `start` 必须按页对齐，否则返回 -1；
-// - `len` 不要求对齐，会向上取整到页边界；len 为 0 视为空操作，直接返回 0；
-// - `prot` 的低三位依次表示读(R)、写(W)、执行(X)权限，且不能为 0；
-// - 成功返回 0，失败返回 -1。
+/// `start` 必须按页对齐，否则返回 -1；
+/// `len` 不要求对齐，会向上取整到页边界；len 为 0 视为空操作，直接返回 0；
+/// `prot` 的低三位依次表示读(R)、写(W)、执行(X)权限，且不能为 0；
+/// 成功返回 0，失败返回 -1。
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap");
 
@@ -142,30 +141,29 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
         if !memory_set.is_range_free(start_va, end_va) {
             return -1;
         }
+        //如果检查所有特判均通过，那么在当前地址空间加入该新指定的逻辑段
         memory_set.insert_framed_area(start_va, end_va, map_perm);
-        // 无需调用 activate()：陷入内核时 satp 已切到内核页表，返回用户态时
-        // __restore 会写回用户 satp 并执行 sfence.vma，新映射自然生效。
         0
     })
 }
 
 // YOUR JOB: Implement munmap.
 //
-// 简化版 munmap：解除 [start, start + len) 内的页映射并释放物理页帧。
+// 解除 [start, start + len) 内的页映射并释放物理页帧。
 // start 和 len 都必须按页对齐，否则返回 -1；
 // 区间内存在未映射的页（即区间不连续）也返回 -1；
 // len 为 0 视为空操作，直接返回 0。
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!("kernel: sys_munmap");
 
-    if start % PAGE_SIZE != 0 || len % PAGE_SIZE != 0 {//判断是否按页对齐start
+    if start % PAGE_SIZE != 0 {//判断是否按页对齐start
         return -1;
     }
     if len == 0 {
         return 0;
     }
     let end = match start.checked_add(len) { //checked_add防越界
-        Some(end) => end,
+        Some(v) => v,//直接给结束虚拟内存地址，而页对齐放到unmap函数时自动给出当前结束地址的下一页
         None => return -1,
     };
 

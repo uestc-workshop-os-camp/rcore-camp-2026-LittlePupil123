@@ -79,33 +79,31 @@ impl MemorySet {
             .all(|area| area.vpn_range.get_end() <= start || end <= area.vpn_range.get_start())
     }
     /// Unmap every page of `[start_va, end_va)`.
-    ///
-    /// Returns `false` and changes nothing if some page of the range is not
-    /// mapped or not covered by any area. Otherwise the pages are unmapped and
-    /// the areas covering them are trimmed, or split into two when the range
-    /// falls strictly inside an area.
     pub fn unmap_range(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        //获取区间的起始页和终止页
         let start_vpn = start_va.floor();
         let end_vpn = end_va.ceil();
         if start_vpn >= end_vpn {
             return false;
         }
-        // 先确认区间内每一页都建立了映射，并且都落在某个逻辑段上
+        // 先确认区间内每一vpn都建立了映射，并且区间内有落在地址空间已有的某一个逻辑段上
         let mut vpn = start_vpn;
         while vpn < end_vpn {
             let in_area = self
                 .areas
                 .iter()
+                //确定vpn是否在某个逻辑段，以及该vpn是否被映射
                 .any(|area| area.vpn_range.get_start() <= vpn && vpn < area.vpn_range.get_end());
-            if !in_area || self.page_table.translate(vpn).is_none() {
+            if !in_area || self.page_table.translate(vpn).is_none() {//必须保证区间内存在vpn都在地址空间现有逻辑段以及都有映射才开始解除映射
                 return false;
             }
-            vpn.step();//到下一个虚拟页号
+            vpn.step();//虚拟区间内的下一个虚拟页号
         }
+        //分别取出当前地址空间的逻辑段集以及页表这两个可变引用方便后续使用
         let MemorySet { areas, page_table } = self;
         let mut vpn = start_vpn;
-        while vpn < end_vpn {
-            // 找到包含当前页的逻辑段
+        while vpn < end_vpn { //迭代给定的页区间
+            // 找到包含当前页（实际是起始页）的逻辑段
             let idx = match areas.iter().position(|area| {
                 area.vpn_range.get_start() <= vpn && vpn < area.vpn_range.get_end()
             }) {
@@ -115,9 +113,10 @@ impl MemorySet {
                     continue;
                 }
             };
+            //获取这个逻辑段的起始页和终止页
             let area_start = areas[idx].vpn_range.get_start();
             let area_end = areas[idx].vpn_range.get_end();
-            // 确定在找到的逻辑段内能解除映射的区间
+            // 确定找到的逻辑段区间和给定区间相交集合（在当前逻辑段内能够删除的区间）
             let unmap_start = area_start.max(start_vpn);
             let unmap_end = area_end.min(end_vpn);
 
