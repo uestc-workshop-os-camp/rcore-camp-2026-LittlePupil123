@@ -4,7 +4,7 @@ use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current
 use crate::config::PAGE_SIZE;
 use crate::mm::{translated_byte_buffer, MapPermission, PTEFlags, PageTable, VirtAddr};
 use crate::task::{current_user_token, TASK_MANAGER};
-use crate::timer::get_time;
+use crate::timer::get_time_us;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -41,35 +41,32 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
 
     let token = current_user_token();
-    // 获取 TimeVal 的大小（通常是 16 字节）
-    let len = core::mem::size_of::<TimeVal>(); 
-    // 把用户指针翻译成物理内存的可写字节切片
-    //buffers是一系列字节切片，表示用户空间中的缓存所在的一系列物理页帧
-    let mut buffers = translated_byte_buffer(token, ts as *mut u8, len);
-    // 获取当前时间
-    let time = get_time(); // 假设你有一个获取时间的函数返回 TimeVal
-    
-    // 将获取到的TimeVal结构体退化为字节切片的形式，以便可以安全地拷贝到用户空间
-    let time_bytes = unsafe {
-        core::slice::from_raw_parts(&time as *const _ as *const u8, len)
+    // 用微秒构造 TimeVal：sec 是秒，usec 是微秒
+    let us = get_time_us();
+    let time = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
     };
+    // 用户指针可能跨页，翻译成一系列可写字节切片后逐页拷贝
+    let len = core::mem::size_of::<TimeVal>();
+    let mut buffers = translated_byte_buffer(token, ts as *mut u8, len);
+    let time_bytes = unsafe { core::slice::from_raw_parts(&time as *const _ as *const u8, len) };
 
-    // 安全地拷贝到用户空间
     let mut copied = 0;
-    for buffer in &mut buffers {//逐页将time_bytes拷贝进buffer中
+    for buffer in &mut buffers {
         let copy_len = buffer.len().min(len - copied);
         buffer[..copy_len].copy_from_slice(&time_bytes[copied..copied + copy_len]);
         copied += copy_len;
     }
-    
-    len as isize // 返回写入的字节数，或者 0 表示成功
 
+    // 用户库约定：成功返回 0（返回非 0 会被 get_time() 当成 -1）
+    0
 }
 
 /// 检查用户地址是否合法、所在页已映射，且具备读（或写）权限。
 ///
 /// 用户地址必须是 39 位规范地址且页表项带 U 位，这样 `isize::MAX`
-/// 这类高位乱码的指针在截断后就不会“撞上” trampoline 的映射。
+/// 这类高位乱码的指针在截断后就不会“撞上” trampoline 的映射。（这里的错误解决依靠的ai）
 fn user_page_allowed(token: usize, addr: usize, write: bool) -> bool {
     let va = VirtAddr::from(addr);
     if usize::from(va) != addr {
